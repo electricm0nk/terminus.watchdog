@@ -4,8 +4,7 @@ Uses httpx.MockTransport to simulate Loki HTTP responses without real network ca
 """
 from __future__ import annotations
 
-import json
-from datetime import datetime, timedelta, UTC
+from datetime import UTC, datetime, timedelta
 
 import httpx
 import pytest
