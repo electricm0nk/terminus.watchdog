@@ -26,3 +26,4 @@ data:
   TEMPORAL_NAMESPACE: {{ .Values.temporal.namespace | quote }}
   DISCORD_ALERTS_CHANNEL_ID: {{ .Values.discord.alertsChannelId | quote }}
   DISCORD_INFO_CHANNEL_ID: {{ .Values.discord.infoChannelId | quote }}
+  HEALTH_PORT: {{ .Values.health.port | quote }}
