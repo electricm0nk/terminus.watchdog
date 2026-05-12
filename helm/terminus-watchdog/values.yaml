@@ -29,7 +29,7 @@ argocd:
 # ── Temporal ─────────────────────────────────────────────────────────────────
 temporal:
   host: "temporal-server-frontend.temporal.svc.cluster.local:7233"
-  namespace: "temporal"
+  namespace: "default"
 
 # ── Health / Metrics ─────────────────────────────────────────────────────────
 health:
