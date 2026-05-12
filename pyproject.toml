@@ -10,6 +10,7 @@ dependencies = [
   "kubernetes-asyncio",
   "aiohttp",
   "python-json-logger",
+  "python-dateutil>=2.9",
 ]
 
 [tool.uv]

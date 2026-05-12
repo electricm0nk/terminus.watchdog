@@ -961,6 +961,7 @@ dependencies = [
     { name = "discord-py" },
     { name = "httpx" },
     { name = "kubernetes-asyncio" },
+    { name = "python-dateutil" },
     { name = "python-json-logger" },
     { name = "temporalio" },
 ]
@@ -981,6 +982,7 @@ requires-dist = [
     { name = "discord-py", specifier = ">=2.4" },
     { name = "httpx", specifier = ">=0.27" },
     { name = "kubernetes-asyncio" },
+    { name = "python-dateutil", specifier = ">=2.9" },
     { name = "python-json-logger" },
     { name = "temporalio", specifier = ">=1.0" },
 ]
