@@ -1,0 +1,28 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: watchdog-config
+  namespace: {{ .Values.namespace }}
+  labels:
+    {{- include "terminus-watchdog.labels" . | nindent 4 }}
+data:
+  POLL_INTERVAL_SECONDS: {{ .Values.config.pollIntervalSeconds | quote }}
+  HEARTBEAT_INTERVAL_SECONDS: {{ .Values.config.heartbeatIntervalSeconds | quote }}
+  DETECTION_TIMEOUT_SECONDS: {{ .Values.config.detectionTimeoutSeconds | quote }}
+  TEMPORAL_ZOMBIE_ACTIVITY_MINUTES: {{ .Values.config.temporalZombieActivityMinutes | quote }}
+  TEMPORAL_ZOMBIE_CRITICAL_MINUTES: {{ .Values.config.temporalZombieCriticalMinutes | quote }}
+  TEMPORAL_STALE_NO_EVENTS_MINUTES: {{ .Values.config.temporalStaleNoEventsMinutes | quote }}
+  ARGOCD_STUCK_SYNC_MINUTES: {{ .Values.config.argoCDStuckSyncMinutes | quote }}
+  K8S_CRASHLOOPBACKOFF_RECOVERY_GRACE_MINUTES: {{ .Values.config.k8sCrashLoopBackOffRecoveryGraceMinutes | quote }}
+  K8S_CRASHLOOPBACKOFF_ESCALATION_RESTARTS: {{ .Values.config.k8sCrashLoopBackOffEscalationRestarts | quote }}
+  K8S_CRASHLOOPBACKOFF_ESCALATION_WINDOW_MINUTES: {{ .Values.config.k8sCrashLoopBackOffEscalationWindowMinutes | quote }}
+  K8S_NODE_NOTREADY_MINUTES: {{ .Values.config.k8sNodeNotReadyMinutes | quote }}
+  K8S_DEPLOYMENT_UNAVAILABLE_MINUTES: {{ .Values.config.k8sDeploymentUnavailableMinutes | quote }}
+  DEFAULT_COOLDOWN_MINUTES: {{ .Values.config.defaultCooldownMinutes | quote }}
+  COLD_START_GRACE_MINUTES: {{ .Values.config.coldStartGraceMinutes | quote }}
+  SOURCE_UNAVAILABLE_ALERT_AFTER_FAILURES: {{ .Values.config.sourceUnavailableAlertAfterFailures | quote }}
+  ARGOCD_URL: {{ .Values.argocd.url | quote }}
+  TEMPORAL_HOST: {{ .Values.temporal.host | quote }}
+  TEMPORAL_NAMESPACE: {{ .Values.temporal.namespace | quote }}
+  DISCORD_ALERTS_CHANNEL_ID: {{ .Values.discord.alertsChannelId | quote }}
+  DISCORD_INFO_CHANNEL_ID: {{ .Values.discord.infoChannelId | quote }}

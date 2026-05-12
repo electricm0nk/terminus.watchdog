@@ -1,0 +1,16 @@
+apiVersion: v2
+name: terminus-watchdog
+description: Terminus Watchdog Agent — autonomous platform monitoring via Discord
+type: application
+version: 0.1.0
+appVersion: "0.1.0"
+keywords:
+  - watchdog
+  - monitoring
+  - discord
+  - argocd
+home: https://github.com/electricm0nk/terminus.watchdog
+sources:
+  - https://github.com/electricm0nk/terminus.watchdog
+maintainers:
+  - name: terminus-ops

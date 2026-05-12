@@ -1,0 +1,78 @@
+# Default values for terminus-watchdog
+
+replicaCount: 1
+
+image:
+  repository: ghcr.io/electricm0nk/terminus-watchdog
+  # tag must be explicitly set per environment via values-dev.yaml / values.yaml in terminus.infra
+  # Do NOT use "latest" — see cicd.md "Do Not Use `latest` For Runtime Deployments"
+  pullPolicy: IfNotPresent
+  tag: ""
+
+nameOverride: ""
+fullnameOverride: ""
+
+namespace: terminus-watchdog
+
+serviceAccount:
+  name: terminus-watchdog
+
+# ── Discord ───────────────────────────────────────────────────────────────────
+discord:
+  alertsChannelId: "1503553430365667328"
+  infoChannelId: "1503553466474168361"
+
+# ── ArgoCD ────────────────────────────────────────────────────────────────────
+argocd:
+  url: "https://argocd.trantor.internal"
+
+# ── Temporal ─────────────────────────────────────────────────────────────────
+temporal:
+  host: "temporal-server-frontend.temporal.svc.cluster.local:7233"
+  namespace: "temporal"
+
+# ── Health / Metrics ─────────────────────────────────────────────────────────
+health:
+  port: 9090
+
+# ── Polling / Timing thresholds (from PRD §8.1) ──────────────────────────────
+config:
+  pollIntervalSeconds: "300"
+  heartbeatIntervalSeconds: "21600"
+  detectionTimeoutSeconds: "10"
+  temporalZombieActivityMinutes: "120"
+  temporalZombieCriticalMinutes: "1440"
+  temporalStaleNoEventsMinutes: "30"
+  argoCDStuckSyncMinutes: "5"
+  k8sCrashLoopBackOffRecoveryGraceMinutes: "120"
+  k8sCrashLoopBackOffEscalationRestarts: "5"
+  k8sCrashLoopBackOffEscalationWindowMinutes: "10"
+  k8sNodeNotReadyMinutes: "2"
+  k8sDeploymentUnavailableMinutes: "5"
+  defaultCooldownMinutes: "30"
+  coldStartGraceMinutes: "30"
+  sourceUnavailableAlertAfterFailures: "3"
+
+# ── High-priority windows ─────────────────────────────────────────────────────
+highPriorityWindows:
+  - name: etailpet-order-day
+    rruleStr: "FREQ=WEEKLY;BYDAY=TU;BYHOUR=11;BYMINUTE=55"
+    durationHours: "35.58"
+    timezone: "America/Chicago"
+
+# ── Vault / ESO ──────────────────────────────────────────────────────────────
+vault:
+  secretBasePath: "secret/terminus/watchdog"
+
+# ── ServiceMonitor ────────────────────────────────────────────────────────────
+serviceMonitor:
+  enabled: true
+  interval: 30s
+
+resources:
+  requests:
+    cpu: 50m
+    memory: 64Mi
+  limits:
+    cpu: 200m
+    memory: 128Mi

@@ -1,0 +1,44 @@
+[project]
+name = "terminus-watchdog"
+version = "0.1.0"
+description = "Terminus Watchdog Agent — autonomous platform monitoring via Discord"
+requires-python = ">=3.12"
+dependencies = [
+  "discord.py>=2.4",
+  "httpx>=0.27",
+  "temporalio>=1.0",
+  "kubernetes-asyncio",
+  "aiohttp",
+  "python-json-logger",
+  "python-dateutil>=2.9",
+]
+
+[tool.uv]
+
+[dependency-groups]
+dev = [
+  "pytest",
+  "pytest-asyncio",
+  "ruff",
+  "mypy",
+  "freezegun",
+  "aiohttp[test]",
+  "types-python-dateutil>=2.9.0.20260508",
+]
+
+[tool.ruff]
+line-length = 120
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "UP"]
+
+[tool.mypy]
+strict = true
+python_version = "3.12"
+
+[tool.pytest.ini_options]
+asyncio_mode = "auto"
+testpaths = ["tests"]
+markers = [
+  "acceptance: BDD acceptance criteria tests (1:1 with PRD ACs)",
+]
