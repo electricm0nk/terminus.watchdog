@@ -4,7 +4,7 @@ from __future__ import annotations
 import asyncio
 import datetime
 from typing import Any
-from unittest.mock import AsyncMock, MagicMock, patch
+from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 
@@ -95,6 +95,7 @@ async def test_suppressed_alert_skips_post_alert() -> None:
     bot = _make_bot()
     state = WatchdogState()
     state.startup_time = datetime.datetime.utcnow() - datetime.timedelta(minutes=60)
+    settings = _make_settings()
     # Manually suppress the key
     state.add_suppression(
         key=alert.suppression_key,
@@ -115,6 +116,7 @@ async def test_cooldown_alert_skips_post_alert() -> None:
     bot = _make_bot()
     state = WatchdogState()
     state.startup_time = datetime.datetime.utcnow() - datetime.timedelta(minutes=60)
+    settings = _make_settings()
     # Start cooldown for this key
     state.start_cooldown(key=alert.suppression_key, minutes=30)
 

@@ -86,6 +86,12 @@ class Settings:
     argocd_stuck_sync_threshold_minutes: int = field(
         default_factory=lambda: _get_int("ARGOCD_STUCK_SYNC_THRESHOLD_MINUTES", 5)
     )
+    cooldown_minutes: int = field(
+        default_factory=lambda: _get_int("COOLDOWN_MINUTES", 30)
+    )
+    cold_start_grace_minutes: int = field(
+        default_factory=lambda: _get_int("COLD_START_GRACE_MINUTES", 30)
+    )
 
     def __repr__(self) -> str:
         return (
