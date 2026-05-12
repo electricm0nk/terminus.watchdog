@@ -115,19 +115,17 @@ class TestTemporalClientListWorkflows:
         assert "Running" in query_str
 
     async def test_list_timeout_raises_temporal_timeout_error(self) -> None:
-        """asyncio.TimeoutError during list_workflows raises TemporalTimeoutError."""
-        import asyncio
+        """asyncio.TimeoutError raised during iteration is wrapped in TemporalTimeoutError."""
 
         client = TemporalClient(host="temporal.internal:7233", namespace="default")
         mock_inner = MagicMock()
 
-        async def _slow_gen() -> object:
-            await asyncio.sleep(100)
-            yield  # pragma: no cover
+        async def _timeout_gen() -> object:
+            raise TimeoutError
+            yield  # pragma: no cover  # noqa: unreachable
 
-        mock_inner.list_workflows = MagicMock(return_value=_slow_gen())
+        mock_inner.list_workflows = MagicMock(return_value=_timeout_gen())
         client._client = mock_inner  # type: ignore[attr-defined]
 
-        with patch("watchdog.clients.temporal.asyncio.wait_for", side_effect=asyncio.TimeoutError):
-            with pytest.raises(TemporalTimeoutError):
-                await client.list_running_workflows()
+        with pytest.raises(TemporalTimeoutError):
+            await client.list_running_workflows()

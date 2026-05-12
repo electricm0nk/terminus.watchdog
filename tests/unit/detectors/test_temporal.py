@@ -7,7 +7,6 @@ from __future__ import annotations
 import datetime
 from unittest.mock import AsyncMock, MagicMock
 
-import pytest
 from freezegun import freeze_time
 
 from watchdog.detectors.temporal import TemporalZombieDetector
