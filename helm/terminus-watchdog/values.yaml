@@ -4,8 +4,10 @@ replicaCount: 1
 
 image:
   repository: ghcr.io/electricm0nk/terminus-watchdog
+  # tag must be explicitly set per environment via values-dev.yaml / values.yaml in terminus.infra
+  # Do NOT use "latest" — see cicd.md "Do Not Use `latest` For Runtime Deployments"
   pullPolicy: IfNotPresent
-  tag: "latest"
+  tag: ""
 
 nameOverride: ""
 fullnameOverride: ""

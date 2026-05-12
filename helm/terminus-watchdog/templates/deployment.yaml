@@ -16,6 +16,8 @@ spec:
         {{- include "terminus-watchdog.labels" . | nindent 8 }}
     spec:
       serviceAccountName: {{ .Values.serviceAccount.name }}
+      imagePullSecrets:
+        - name: ghcr-pull-secret
       containers:
         - name: watchdog
           image: "{{ .Values.image.repository }}:{{ .Values.image.tag }}"
