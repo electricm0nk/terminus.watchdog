@@ -1,11 +1,10 @@
 """Unit tests for ArgoCDClient — Story 2.1 (RED phase)."""
 from __future__ import annotations
 
-import pytest
 import httpx
+import pytest
 
-from watchdog.clients.argocd import ArgoCDClient, ArgoCDAuthError, ArgoCDTimeoutError
-
+from watchdog.clients.argocd import ArgoCDAuthError, ArgoCDClient, ArgoCDTimeoutError
 
 # ---------------------------------------------------------------------------
 # Helpers
