@@ -37,3 +37,6 @@ python_version = "3.12"
 [tool.pytest.ini_options]
 asyncio_mode = "auto"
 testpaths = ["tests"]
+markers = [
+  "acceptance: BDD acceptance criteria tests (1:1 with PRD ACs)",
+]
