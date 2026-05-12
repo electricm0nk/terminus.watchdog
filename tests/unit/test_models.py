@@ -2,10 +2,11 @@
 
 from __future__ import annotations
 
-import pytest
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 
-from watchdog.models import Alert, ActiveAlert, SuppressEntry
+import pytest
+
+from watchdog.models import ActiveAlert, Alert, SuppressEntry
 
 
 class TestAlert:
@@ -101,8 +102,8 @@ class TestActiveAlert:
             recommended_action="a",
             remediation_available=True,
         )
-        first_seen = datetime(2026, 5, 11, 10, 0, 0, tzinfo=timezone.utc)
-        last_notified = datetime(2026, 5, 11, 10, 5, 0, tzinfo=timezone.utc)
+        first_seen = datetime(2026, 5, 11, 10, 0, 0, tzinfo=UTC)
+        last_notified = datetime(2026, 5, 11, 10, 5, 0, tzinfo=UTC)
         active = ActiveAlert(
             alert=alert,
             first_seen=first_seen,
@@ -127,7 +128,7 @@ class TestActiveAlert:
             recommended_action="a",
             remediation_available=False,
         )
-        ts = datetime.now(tz=timezone.utc)
+        ts = datetime.now(tz=UTC)
         active = ActiveAlert(
             alert=alert,
             first_seen=ts,
@@ -141,7 +142,7 @@ class TestActiveAlert:
 
 class TestSuppressEntry:
     def test_suppress_entry_fields(self) -> None:
-        expires = datetime(2026, 5, 11, 12, 0, 0, tzinfo=timezone.utc)
+        expires = datetime(2026, 5, 11, 12, 0, 0, tzinfo=UTC)
         entry = SuppressEntry(
             key="argocd-degraded:production/my-app",
             expires_at=expires,
@@ -152,7 +153,7 @@ class TestSuppressEntry:
         assert entry.reason == "maintenance window"
 
     def test_suppress_entry_is_frozen(self) -> None:
-        expires = datetime(2026, 5, 11, 12, 0, 0, tzinfo=timezone.utc)
+        expires = datetime(2026, 5, 11, 12, 0, 0, tzinfo=UTC)
         entry = SuppressEntry(
             key="k",
             expires_at=expires,

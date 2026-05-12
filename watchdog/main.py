@@ -12,7 +12,7 @@ from watchdog.config import Settings
 
 def _configure_logging() -> None:
     handler = logging.StreamHandler()
-    formatter = jsonlogger.JsonFormatter(
+    formatter = jsonlogger.JsonFormatter(  # type: ignore[attr-defined]
         fmt="%(asctime)s %(levelname)s %(name)s %(message)s"
     )
     handler.setFormatter(formatter)
