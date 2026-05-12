@@ -93,6 +93,31 @@ class Settings:
         default_factory=lambda: _get_int("COLD_START_GRACE_MINUTES", 30)
     )
 
+    # Loki (optional — empty string disables Loki-based detectors)
+    loki_url: str = field(default_factory=lambda: _get("LOKI_URL", ""))
+
+    # Temporal zombie / stale thresholds
+    zombie_activity_hours: int = field(
+        default_factory=lambda: _get_int("ZOMBIE_ACTIVITY_HOURS", 2)
+    )
+    zombie_critical_hours: int = field(
+        default_factory=lambda: _get_int("ZOMBIE_CRITICAL_HOURS", 24)
+    )
+    stale_workflow_minutes: int = field(
+        default_factory=lambda: _get_int("STALE_WORKFLOW_MINUTES", 30)
+    )
+
+    # k8s thresholds
+    crashloop_recovery_seconds: int = field(
+        default_factory=lambda: _get_int("CRASHLOOP_RECOVERY_SECONDS", 120)
+    )
+    deployment_unavailable_minutes: int = field(
+        default_factory=lambda: _get_int("DEPLOYMENT_UNAVAILABLE_MINUTES", 5)
+    )
+    node_notready_minutes: int = field(
+        default_factory=lambda: _get_int("NODE_NOTREADY_MINUTES", 2)
+    )
+
     def __repr__(self) -> str:
         return (
             f"Settings("
