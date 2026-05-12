@@ -9,7 +9,7 @@ from unittest.mock import AsyncMock, MagicMock
 
 from freezegun import freeze_time
 
-from watchdog.detectors.temporal import TemporalZombieDetector
+from watchdog.detectors.temporal import TemporalStaleDetector, TemporalZombieDetector
 
 
 async def _async_gen(items: list[object]):  # type: ignore[type-arg]
@@ -167,3 +167,113 @@ class TestTemporalZombieCriticalAlert:
         assert "wf-s" not in by_wf  # no alert for short
         assert by_wf["wf-m"] == "temporal-zombie-activity"
         assert by_wf["wf-l"] == "temporal-zombie-critical"
+
+
+# ─── TemporalStaleDetector Tests ─────────────────────────────────────────────
+
+
+def _make_stale_client(workflows: list[MagicMock]) -> MagicMock:
+    mock_client = AsyncMock()
+    mock_client.list_running_workflows = AsyncMock(return_value=workflows)
+    return mock_client
+
+
+def _make_wf_with_history(
+    workflow_id: str = "wf-stale",
+    run_id: str = "run-stale",
+    task_queue: str = "stale-queue",
+    history_length: int = 10,
+    hours_ago: float = 1.0,
+) -> MagicMock:
+    mock_wf = MagicMock()
+    mock_wf.id = workflow_id
+    mock_wf.run_id = run_id
+    mock_wf.task_queue = task_queue
+    mock_wf.history_length = history_length
+    mock_wf.start_time = datetime.datetime.now(datetime.UTC) - datetime.timedelta(hours=hours_ago)
+    return mock_wf
+
+
+class TestTemporalStaleDetectorBaseline:
+    """First poll: baselines are established, no alerts emitted."""
+
+    async def test_first_poll_no_alert(self) -> None:
+        """On first detection cycle, no stale alerts regardless of history_length."""
+        wf = _make_wf_with_history("wf-new", history_length=5)
+        client = _make_stale_client([wf])
+        detector = TemporalStaleDetector(temporal_client=client, stale_minutes=30)
+        alerts = await detector.detect()
+        assert alerts == []
+
+    async def test_first_poll_establishes_tracking(self) -> None:
+        """After first poll, workflow is in _history_tracking."""
+        wf = _make_wf_with_history("wf-track", run_id="run-track", history_length=7)
+        client = _make_stale_client([wf])
+        detector = TemporalStaleDetector(temporal_client=client, stale_minutes=30)
+        await detector.detect()
+        assert "run-track" in detector._history_tracking  # type: ignore[attr-defined]
+
+
+class TestTemporalStaleDetectorAlerts:
+    """Second+ poll: stale alert when history_length unchanged beyond threshold."""
+
+    async def test_unchanged_history_beyond_threshold_fires_alert(self) -> None:
+        """Same history_length seen for > stale_minutes: temporal-stale-workflow Medium."""
+        wf = _make_wf_with_history("wf-s", run_id="run-s", history_length=10)
+        client = _make_stale_client([wf])
+        detector = TemporalStaleDetector(temporal_client=client, stale_minutes=30)
+        await detector.detect()
+        past = datetime.datetime.now(datetime.UTC) - datetime.timedelta(minutes=35)
+        detector._history_tracking["run-s"] = (10, past)  # type: ignore[attr-defined]
+        alerts = await detector.detect()
+        assert len(alerts) == 1
+        alert = alerts[0]
+        assert alert.pattern == "temporal-stale-workflow"
+        assert alert.severity == "medium"
+        assert alert.resource_name == "wf-s"
+
+    async def test_unchanged_history_within_threshold_no_alert(self) -> None:
+        """Same history_length but not yet past threshold: no alert."""
+        wf = _make_wf_with_history("wf-ok", run_id="run-ok", history_length=10)
+        client = _make_stale_client([wf])
+        detector = TemporalStaleDetector(temporal_client=client, stale_minutes=30)
+        await detector.detect()
+        recent = datetime.datetime.now(datetime.UTC) - datetime.timedelta(minutes=10)
+        detector._history_tracking["run-ok"] = (10, recent)  # type: ignore[attr-defined]
+        alerts = await detector.detect()
+        assert alerts == []
+
+    async def test_changed_history_resets_baseline_no_alert(self) -> None:
+        """When history_length increases, tracking resets and no stale alert fires."""
+        wf = _make_wf_with_history("wf-prog", run_id="run-prog", history_length=20)
+        client = _make_stale_client([wf])
+        detector = TemporalStaleDetector(temporal_client=client, stale_minutes=30)
+        past = datetime.datetime.now(datetime.UTC) - datetime.timedelta(minutes=35)
+        detector._history_tracking["run-prog"] = (10, past)  # type: ignore[attr-defined]
+        alerts = await detector.detect()
+        assert alerts == []
+        tracked_len, _ = detector._history_tracking["run-prog"]  # type: ignore[attr-defined]
+        assert tracked_len == 20
+
+    async def test_disappeared_workflow_removed_from_tracking(self) -> None:
+        """Workflow no longer in running list is cleaned up from _history_tracking."""
+        wf = _make_wf_with_history("wf-gone", run_id="run-gone", history_length=5)
+        client_with_wf = _make_stale_client([wf])
+        client_empty = _make_stale_client([])
+        detector = TemporalStaleDetector(temporal_client=client_with_wf, stale_minutes=30)
+        await detector.detect()
+        assert "run-gone" in detector._history_tracking  # type: ignore[attr-defined]
+        detector._client = client_empty  # type: ignore[attr-defined]
+        await detector.detect()
+        assert "run-gone" not in detector._history_tracking  # type: ignore[attr-defined]
+
+    async def test_stale_workflow_suppression_key_format(self) -> None:
+        """suppression_key format: temporal-stale-workflow:{task_queue}/{workflow_id}."""
+        wf = _make_wf_with_history("wf-key", run_id="run-key", task_queue="tq1", history_length=5)
+        client = _make_stale_client([wf])
+        detector = TemporalStaleDetector(temporal_client=client, stale_minutes=30)
+        await detector.detect()
+        past = datetime.datetime.now(datetime.UTC) - datetime.timedelta(minutes=35)
+        detector._history_tracking["run-key"] = (5, past)  # type: ignore[attr-defined]
+        alerts = await detector.detect()
+        assert alerts[0].suppression_key == "temporal-stale-workflow:tq1/wf-key"
