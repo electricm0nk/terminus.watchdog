@@ -9,7 +9,6 @@ import pytest
 from watchdog.clients.argocd import ArgoCDAuthError, ArgoCDTimeoutError
 from watchdog.detectors.argocd import ArgoCDPoller
 
-
 # ---------------------------------------------------------------------------
 # Helpers — build minimal ArgoCD app dicts
 # ---------------------------------------------------------------------------
