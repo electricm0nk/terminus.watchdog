@@ -1,11 +1,10 @@
 """Tests for health and metrics HTTP server — Story 1.2."""
 from __future__ import annotations
 
-import pytest
 from aiohttp.test_utils import TestClient, TestServer
 
 import watchdog.health as health_module
-from watchdog.health import _create_app, update_heartbeat_timestamp
+from watchdog.health import _create_app
 from watchdog.state import WatchdogState
 
 
