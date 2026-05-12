@@ -1,6 +1,7 @@
 """Unit tests for ArgoCDStuckSyncDetector — Story 2.4 (RED phase)."""
 from __future__ import annotations
 
+from datetime import UTC
 from typing import Any
 from unittest.mock import AsyncMock, MagicMock
 
@@ -8,7 +9,6 @@ import pytest
 from freezegun import freeze_time
 
 from watchdog.detectors.argocd import ArgoCDStuckSyncDetector
-
 
 # ---------------------------------------------------------------------------
 # Helpers
@@ -24,10 +24,10 @@ def _make_syncing_app(
     op_phase: str = "Running",
 ) -> dict[str, Any]:
     """Build an app dict that is actively syncing."""
-    from datetime import datetime, timedelta, timezone
+    from datetime import datetime, timedelta
 
     started_at = (
-        datetime(2026, 1, 15, 12, 0, 0, tzinfo=timezone.utc)
+        datetime(2026, 1, 15, 12, 0, 0, tzinfo=UTC)
         - timedelta(seconds=started_seconds_ago)
     ).strftime("%Y-%m-%dT%H:%M:%SZ")
 

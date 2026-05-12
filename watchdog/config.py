@@ -69,6 +69,9 @@ class Settings:
     detection_timeout_seconds: int = field(
         default_factory=lambda: _get_int("DETECTION_TIMEOUT_SECONDS", 10)
     )
+    argocd_stuck_sync_threshold_minutes: int = field(
+        default_factory=lambda: _get_int("ARGOCD_STUCK_SYNC_THRESHOLD_MINUTES", 5)
+    )
 
     def __repr__(self) -> str:
         return (

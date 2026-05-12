@@ -139,3 +139,67 @@ class ArgoCDPoller(BaseDetector):
 
         return alerts
 
+
+class ArgoCDStuckSyncDetector(BaseDetector):
+    """Detects ArgoCD applications stuck in Progressing / syncing state.
+
+    An alert is raised when an app's operationState.phase == "Running"
+    and elapsed time since startedAt exceeds threshold_minutes.
+    """
+
+    def __init__(
+        self,
+        client: ArgoCDClient,
+        threshold_minutes: int = 5,
+    ) -> None:
+        self._client = client
+        self._threshold_seconds = threshold_minutes * 60
+
+    @property
+    def pattern_id(self) -> str:
+        return "argocd-stuck-sync"
+
+    async def detect(self) -> list[Alert]:
+        try:
+            apps = await self._client.list_applications()
+        except ArgoCDAuthError as exc:
+            log.error("ArgoCDAuthError in stuck-sync detect: %s", exc)
+            return []
+        except ArgoCDTimeoutError as exc:
+            log.warning("ArgoCDTimeoutError in stuck-sync detect: %s", exc)
+            return []
+
+        alerts: list[Alert] = []
+        for app in apps:
+            op_phase: str = (
+                app.get("status", {}).get("operationState", {}).get("phase", "")
+            )
+            if op_phase != "Running":
+                continue
+
+            duration = _duration_seconds(app)
+            if duration <= self._threshold_seconds:
+                continue
+
+            name: str = app.get("metadata", {}).get("name", "unknown")
+            namespace: str = app.get("metadata", {}).get("namespace", "argocd")
+            threshold_min = self._threshold_seconds // 60
+
+            alerts.append(Alert(
+                pattern="argocd-stuck-sync",
+                severity="high",
+                resource_name=name,
+                resource_namespace=namespace,
+                duration_seconds=duration,
+                diagnosis=(
+                    f"ArgoCD application '{name}' sync has been in Progressing state "
+                    f"for more than {threshold_min} minute(s)."
+                ),
+                recommended_action=(
+                    "Check ArgoCD logs and consider re-syncing or rolling back."
+                ),
+                remediation_available=True,
+            ))
+
+        return alerts
+
