@@ -152,3 +152,152 @@ class TestK8sCrashLoopDetectorHighEscalation:
         client.list_pods = AsyncMock(return_value=[pod_ok])
         await detector.detect()
         assert pod_key not in detector._first_seen  # type: ignore[attr-defined]
+
+
+# ---------------------------------------------------------------------------
+# Story 3.5 — DeploymentUnavailableDetector
+# ---------------------------------------------------------------------------
+
+from watchdog.detectors.k8s import DeploymentUnavailableDetector, NodeNotReadyDetector  # noqa: E402
+
+
+def _make_deployment(
+    name: str = "deploy-1",
+    namespace: str = "default",
+    available: int = 1,
+    desired: int = 1,
+) -> MagicMock:
+    dep = MagicMock()
+    dep.metadata.name = name
+    dep.metadata.namespace = namespace
+    dep.status.available_replicas = available
+    dep.status.replicas = desired
+    return dep
+
+
+def _make_node(name: str = "node-1", ready: bool = True) -> MagicMock:
+    node = MagicMock()
+    node.metadata.name = name
+    cond = MagicMock()
+    cond.type = "Ready"
+    cond.status = "True" if ready else "False"
+    node.status.conditions = [cond]
+    return node
+
+
+def _k8s_client_dep(deployments: list[MagicMock]) -> AsyncMock:
+    mock = AsyncMock()
+    mock.list_pods = AsyncMock(return_value=[])
+    mock.list_deployments = AsyncMock(return_value=deployments)
+    mock.list_nodes = AsyncMock(return_value=[])
+    return mock
+
+
+def _k8s_client_node(nodes: list[MagicMock]) -> AsyncMock:
+    mock = AsyncMock()
+    mock.list_pods = AsyncMock(return_value=[])
+    mock.list_deployments = AsyncMock(return_value=[])
+    mock.list_nodes = AsyncMock(return_value=nodes)
+    return mock
+
+
+class TestDeploymentUnavailableDetector:
+    """Tests for DeploymentUnavailableDetector."""
+
+    async def test_healthy_deployment_no_alert(self) -> None:
+        """Deployment with available replicas → no alert."""
+        dep = _make_deployment("dep-ok", available=1, desired=1)
+        client = _k8s_client_dep([dep])
+        detector = DeploymentUnavailableDetector(k8s_client=client, unavailable_minutes=5)
+        alerts = await detector.detect()
+        assert alerts == []
+
+    async def test_unavailable_within_grace_no_alert(self) -> None:
+        """Zero replicas first seen → no alert (grace period)."""
+        dep = _make_deployment("dep-down", available=0, desired=2)
+        client = _k8s_client_dep([dep])
+        detector = DeploymentUnavailableDetector(k8s_client=client, unavailable_minutes=5)
+        alerts = await detector.detect()
+        assert alerts == []
+
+    async def test_unavailable_beyond_threshold_fires_medium(self) -> None:
+        """Zero replicas beyond threshold → Medium alert."""
+        dep = _make_deployment("dep-down", namespace="prod", available=0, desired=2)
+        client = _k8s_client_dep([dep])
+        detector = DeploymentUnavailableDetector(k8s_client=client, unavailable_minutes=5)
+
+        await detector.detect()  # first poll
+        dep_key = "prod/dep-down"
+        past = datetime.datetime.now(datetime.UTC) - datetime.timedelta(minutes=6)
+        detector._first_seen[dep_key] = past  # type: ignore[attr-defined]
+
+        alerts = await detector.detect()
+        assert len(alerts) == 1
+        alert = alerts[0]
+        assert alert.pattern == "k8s-deployment-unavailable"
+        assert alert.severity == "medium"
+        assert alert.resource_name == "dep-down"
+        assert alert.resource_namespace == "prod"
+
+    async def test_recovery_clears_tracking(self) -> None:
+        """Deployment recovers (replicas > 0) → tracking cleared."""
+        dep_down = _make_deployment("dep-r", available=0, desired=2)
+        client = _k8s_client_dep([dep_down])
+        detector = DeploymentUnavailableDetector(k8s_client=client, unavailable_minutes=5)
+        await detector.detect()
+        assert "default/dep-r" in detector._first_seen  # type: ignore[attr-defined]
+
+        dep_ok = _make_deployment("dep-r", available=2, desired=2)
+        client.list_deployments = AsyncMock(return_value=[dep_ok])
+        await detector.detect()
+        assert "default/dep-r" not in detector._first_seen  # type: ignore[attr-defined]
+
+
+class TestNodeNotReadyDetector:
+    """Tests for NodeNotReadyDetector."""
+
+    async def test_ready_node_no_alert(self) -> None:
+        """Ready node → no alert."""
+        node = _make_node("node-ok", ready=True)
+        client = _k8s_client_node([node])
+        detector = NodeNotReadyDetector(k8s_client=client, notready_minutes=2)
+        alerts = await detector.detect()
+        assert alerts == []
+
+    async def test_notready_within_grace_no_alert(self) -> None:
+        """NotReady first seen → no alert (grace period)."""
+        node = _make_node("node-bad", ready=False)
+        client = _k8s_client_node([node])
+        detector = NodeNotReadyDetector(k8s_client=client, notready_minutes=2)
+        alerts = await detector.detect()
+        assert alerts == []
+
+    async def test_notready_beyond_threshold_fires_high(self) -> None:
+        """NotReady beyond threshold → High alert."""
+        node = _make_node("node-bad", ready=False)
+        client = _k8s_client_node([node])
+        detector = NodeNotReadyDetector(k8s_client=client, notready_minutes=2)
+
+        await detector.detect()  # first poll
+        past = datetime.datetime.now(datetime.UTC) - datetime.timedelta(minutes=3)
+        detector._first_seen["node-bad"] = past  # type: ignore[attr-defined]
+
+        alerts = await detector.detect()
+        assert len(alerts) == 1
+        alert = alerts[0]
+        assert alert.pattern == "k8s-node-notready"
+        assert alert.severity == "high"
+        assert alert.resource_name == "node-bad"
+
+    async def test_recovery_clears_tracking(self) -> None:
+        """Node recovers → tracking cleared."""
+        node_bad = _make_node("node-r", ready=False)
+        client = _k8s_client_node([node_bad])
+        detector = NodeNotReadyDetector(k8s_client=client, notready_minutes=2)
+        await detector.detect()
+        assert "node-r" in detector._first_seen  # type: ignore[attr-defined]
+
+        node_ok = _make_node("node-r", ready=True)
+        client.list_nodes = AsyncMock(return_value=[node_ok])
+        await detector.detect()
+        assert "node-r" not in detector._first_seen  # type: ignore[attr-defined]
