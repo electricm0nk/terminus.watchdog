@@ -240,3 +240,75 @@ async def test_ac_8_cold_start_suppression(caplog: pytest.LogCaptureFixture) -> 
         c.args[0].bypass_quiet_hours for c in calls if c.args[0].pattern == normal_alert.pattern
     ), "non-bypass alert should be suppressed during cold-start"
     assert bypass_alert.pattern in delivered_patterns, "bypass alert must fire during cold-start"
+
+
+# ---------------------------------------------------------------------------
+# Story 3.6 — Source degradation (FR35)
+# ---------------------------------------------------------------------------
+
+
+class TestSourceDegradation:
+    """FR35: After 3 consecutive detector failures, post once to #platform-info."""
+
+    async def test_no_warning_before_3_consecutive_failures(self) -> None:
+        """Fewer than 3 failures → no platform-info post."""
+        fail_detector = _make_detector([], fail=True)
+        bot = _make_bot()
+        state = WatchdogState()
+        state.startup_time = datetime.datetime.utcnow() - datetime.timedelta(hours=1)
+        settings = _make_settings()
+
+        for _ in range(2):
+            await run_detection_cycle(bot=bot, detectors=[fail_detector], state=state, settings=settings)
+
+        bot.post_info.assert_not_called()
+
+    async def test_warning_posted_after_3_consecutive_failures(self) -> None:
+        """After 3 consecutive failures, bot.post_info is called once."""
+        fail_detector = _make_detector([], fail=True)
+        bot = _make_bot()
+        state = WatchdogState()
+        state.startup_time = datetime.datetime.utcnow() - datetime.timedelta(hours=1)
+        settings = _make_settings()
+
+        for _ in range(3):
+            await run_detection_cycle(bot=bot, detectors=[fail_detector], state=state, settings=settings)
+
+        bot.post_info.assert_called_once()
+
+    async def test_warning_not_repeated_on_subsequent_failures(self) -> None:
+        """Warning posted only once per degradation event (not on each failure)."""
+        fail_detector = _make_detector([], fail=True)
+        bot = _make_bot()
+        state = WatchdogState()
+        state.startup_time = datetime.datetime.utcnow() - datetime.timedelta(hours=1)
+        settings = _make_settings()
+
+        for _ in range(6):
+            await run_detection_cycle(bot=bot, detectors=[fail_detector], state=state, settings=settings)
+
+        assert bot.post_info.call_count == 1
+
+    async def test_recovery_resets_failure_count(self) -> None:
+        """Success after failures resets the failure count; new 3-failure series re-fires."""
+        fail_detector = _make_detector([], fail=True)
+        ok_detector = _make_detector([])
+        bot = _make_bot()
+        state = WatchdogState()
+        state.startup_time = datetime.datetime.utcnow() - datetime.timedelta(hours=1)
+        settings = _make_settings()
+
+        # Three failures → warning
+        for _ in range(3):
+            await run_detection_cycle(bot=bot, detectors=[fail_detector], state=state, settings=settings)
+        assert bot.post_info.call_count == 1
+
+        # Recovery (use same pattern_id, success)
+        ok_detector._pattern_id = fail_detector.pattern_id  # type: ignore[attr-defined]
+        for _ in range(3):
+            await run_detection_cycle(bot=bot, detectors=[ok_detector], state=state, settings=settings)
+
+        # Another 3 failures should fire again
+        for _ in range(3):
+            await run_detection_cycle(bot=bot, detectors=[fail_detector], state=state, settings=settings)
+        assert bot.post_info.call_count == 2
