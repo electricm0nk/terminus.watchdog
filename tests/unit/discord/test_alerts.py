@@ -7,7 +7,6 @@ from freezegun import freeze_time
 from watchdog.discord.alerts import format_alert_embed, is_quiet_hours
 from watchdog.models import Alert
 
-
 # ---------------------------------------------------------------------------
 # Helpers
 # ---------------------------------------------------------------------------
