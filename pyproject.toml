@@ -1,6 +1,6 @@
 [project]
 name = "terminus-watchdog"
-version = "0.1.4"
+version = "0.1.5"
 description = "Terminus Watchdog Agent — autonomous platform monitoring via Discord"
 requires-python = ">=3.12"
 dependencies = [

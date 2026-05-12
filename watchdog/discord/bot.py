@@ -1,6 +1,7 @@
 """Discord bot — Gateway-mode WatchdogBot — Story 2.2."""
 from __future__ import annotations
 
+import asyncio
 import logging
 
 import discord
@@ -30,9 +31,11 @@ class WatchdogBot(discord.Client):
         self._alerts_channel_id = alerts_channel_id
         self._info_channel_id = info_channel_id
         self._ops_user_ids = ops_user_ids
+        self.ready_event: asyncio.Event = asyncio.Event()
 
     async def on_ready(self) -> None:
         log.info("WatchdogBot connected: %s — %d guild(s)", self.user, len(self.guilds))
+        self.ready_event.set()
 
     async def post_alert(self, alert: Alert, state: WatchdogState) -> int:
         """Post a formatted alert embed to the appropriate Discord channel.

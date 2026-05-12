@@ -131,16 +131,23 @@ async def main() -> None:
         ops_user_ids=settings.discord_ops_user_ids,
     )
 
-    # Run health server + detection loop concurrently
+    async def _run_bot_then_loop() -> None:
+        """Start the Discord bot and wait for it to be ready before launching the detection loop."""
+        bot_task = asyncio.create_task(bot.start(settings.discord_bot_token))
+        await asyncio.wait_for(bot.ready_event.wait(), timeout=60)
+        loop_task = asyncio.create_task(
+            detection_loop(bot=bot, detectors=detectors, state=state, settings=settings)
+        )
+        await asyncio.gather(bot_task, loop_task)
+
+    # Run health server + bot+detection concurrently
     health_task = asyncio.create_task(
         start_health_server(state, port=int(os.environ.get("HEALTH_PORT", "8080")))
     )
-    loop_task = asyncio.create_task(
-        detection_loop(bot=bot, detectors=detectors, state=state, settings=settings)
-    )
+    bot_loop_task = asyncio.create_task(_run_bot_then_loop())
 
     try:
-        await asyncio.gather(health_task, loop_task)
+        await asyncio.gather(health_task, bot_loop_task)
     finally:
         await argocd_client.aclose()
         await temporal_client.aclose()
