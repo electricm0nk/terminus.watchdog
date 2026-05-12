@@ -9,6 +9,20 @@ import os
 from dataclasses import dataclass, field
 
 
+@dataclass(frozen=True)
+class HighPriorityWindow:
+    """Configuration for a named high-priority business window.
+
+    The window is defined by a weekly recurrence rule (BYDAY/BYHOUR/BYMINUTE)
+    and a duration.  Any OutOfSync etailpet-* app during the window
+    triggers argocd-order-day-unsync with bypass_quiet_hours=True.
+    """
+
+    name: str
+    rrule_str: str          # e.g. "FREQ=WEEKLY;BYDAY=TU;BYHOUR=11;BYMINUTE=55"
+    duration_hours: float   # hours the window stays open after start
+    timezone: str           # IANA tz string, e.g. "America/Chicago"
+
 def _require(name: str) -> str:
     value = os.environ.get(name)
     if not value:
