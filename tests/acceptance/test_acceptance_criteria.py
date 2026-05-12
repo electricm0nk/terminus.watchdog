@@ -66,6 +66,7 @@ async def test_ac_2_temporal_zombie_detection() -> None:
     temporal-zombie-activity Medium alert delivered via bot.post_alert.
     """
     from unittest.mock import AsyncMock, MagicMock
+
     from watchdog.clients.temporal import TemporalClient
     from watchdog.detectors.temporal import TemporalZombieDetector
 

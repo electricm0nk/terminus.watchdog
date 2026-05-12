@@ -67,3 +67,20 @@ class WatchdogBot(discord.Client):
 
         message = await channel.send(content=content, embed=embed)
         return message.id
+
+    async def post_info(self, message: str) -> None:
+        """Post a plain informational message to the platform-info channel.
+
+        Used for source-degradation warnings (FR35) and heartbeats.
+        Never raises — logs errors silently to avoid crashing the detection loop.
+        """
+        try:
+            channel = self.get_channel(self._info_channel_id)
+            if channel is None:
+                channel = await self.fetch_channel(self._info_channel_id)
+            if not isinstance(channel, discord.TextChannel):
+                log.error("Info channel %d is not a TextChannel — cannot post", self._info_channel_id)
+                return
+            await channel.send(content=message)
+        except Exception as exc:
+            log.error("post_info failed: %s", exc)

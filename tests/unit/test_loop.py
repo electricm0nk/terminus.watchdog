@@ -56,13 +56,19 @@ def _make_alert(
 def _make_bot(message_id: int = 42) -> MagicMock:
     bot = MagicMock()
     bot.post_alert = AsyncMock(return_value=message_id)
+    bot.post_info = AsyncMock(return_value=None)
     return bot
 
 
-def _make_detector(alerts: list[Alert], pattern_id: str = "argocd-live-drift") -> MagicMock:
+def _make_detector(
+    alerts: list[Alert], pattern_id: str = "argocd-live-drift", fail: bool = False
+) -> MagicMock:
     d = MagicMock()
     d.pattern_id = pattern_id
-    d.detect = AsyncMock(return_value=alerts)
+    if fail:
+        d.detect = AsyncMock(side_effect=RuntimeError("detector exploded"))
+    else:
+        d.detect = AsyncMock(return_value=alerts)
     return d
 
 

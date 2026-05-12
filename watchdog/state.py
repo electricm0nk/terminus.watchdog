@@ -22,6 +22,9 @@ class WatchdogState:
         self._cooldowns: dict[str, datetime.datetime] = {}
         # Set at startup; used by detection loop for cold-start grace suppression.
         self.startup_time: datetime.datetime = datetime.datetime.utcnow()
+        # FR35 — Source degradation tracking
+        self.detector_failure_counts: dict[str, int] = {}
+        self.detector_degradation_warned: set[str] = set()
 
     # ------------------------------------------------------------------
     # Suppression helpers

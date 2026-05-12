@@ -9,9 +9,15 @@ import os
 from pythonjsonlogger import jsonlogger
 
 from watchdog.clients.argocd import ArgoCDClient
+from watchdog.clients.k8s import KubernetesClient
+from watchdog.clients.loki import LokiClient
+from watchdog.clients.temporal import TemporalClient
 from watchdog.config import HighPriorityWindow, Settings
 from watchdog.detectors.argocd import ArgoCDPoller, ArgoCDStuckSyncDetector
 from watchdog.detectors.argocd_order_day import ArgoCDOrderDayDetector
+from watchdog.detectors.k8s import DeploymentUnavailableDetector, K8sCrashLoopDetector, NodeNotReadyDetector
+from watchdog.detectors.loki import TemporalPostgresConnectivityDetector
+from watchdog.detectors.temporal import TemporalStaleDetector, TemporalZombieDetector
 from watchdog.discord.bot import WatchdogBot
 from watchdog.health import start_health_server
 from watchdog.loop import detection_loop
@@ -52,15 +58,71 @@ async def main() -> None:
         token=settings.argocd_token,
     )
 
-    # Register all E2 detectors
+    # Temporal client
+    temporal_client = TemporalClient(
+        host=settings.temporal_host,
+        namespace=settings.temporal_namespace,
+        cert_pem=settings.temporal_cert_pem,
+        key_pem=settings.temporal_key_pem,
+    )
+    await temporal_client.connect()
+
+    # Loki client (optional — only created if LOKI_URL is set)
+    loki_client: LokiClient | None = None
+    if settings.loki_url:
+        loki_client = LokiClient(base_url=settings.loki_url)
+
+    # Kubernetes client
+    k8s_client = KubernetesClient()
+    try:
+        await k8s_client.connect()
+        k8s_connected = True
+    except Exception:
+        logger.warning("KubernetesClient: in-cluster config unavailable — k8s detectors disabled")
+        k8s_connected = False
+
+    # Register all detectors
     detectors = [
+        # E2 — ArgoCD
         ArgoCDPoller(client=argocd_client),
         ArgoCDStuckSyncDetector(
             client=argocd_client,
             threshold_minutes=settings.argocd_stuck_sync_threshold_minutes,
         ),
         ArgoCDOrderDayDetector(client=argocd_client, window=_ORDER_DAY_WINDOW),
+        # E3 — Temporal
+        TemporalZombieDetector(
+            temporal_client=temporal_client,
+            zombie_activity_hours=settings.zombie_activity_hours,
+            zombie_critical_hours=settings.zombie_critical_hours,
+        ),
+        TemporalStaleDetector(
+            temporal_client=temporal_client,
+            stale_minutes=settings.stale_workflow_minutes,
+        ),
+        # E3 — Loki
+        TemporalPostgresConnectivityDetector(
+            loki_client=loki_client,
+            loki_url=settings.loki_url,
+        ),
     ]
+
+    # E3 — k8s detectors (only if in-cluster config succeeded)
+    if k8s_connected:
+        detectors += [
+            K8sCrashLoopDetector(
+                k8s_client=k8s_client,
+                recovery_seconds=settings.crashloop_recovery_seconds,
+            ),
+            DeploymentUnavailableDetector(
+                k8s_client=k8s_client,
+                unavailable_minutes=settings.deployment_unavailable_minutes,
+            ),
+            NodeNotReadyDetector(
+                k8s_client=k8s_client,
+                notready_minutes=settings.node_notready_minutes,
+            ),
+        ]
 
     # Discord bot
     bot = WatchdogBot(
@@ -81,6 +143,7 @@ async def main() -> None:
         await asyncio.gather(health_task, loop_task)
     finally:
         await argocd_client.aclose()
+        await temporal_client.aclose()
 
 
 if __name__ == "__main__":

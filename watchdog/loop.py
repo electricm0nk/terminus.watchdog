@@ -19,17 +19,22 @@ if TYPE_CHECKING:
 
 log = logging.getLogger(__name__)
 
+_DEGRADATION_THRESHOLD = 3
 
-async def _run_detector(detector: BaseDetector, timeout_seconds: int) -> list[Alert]:
-    """Run a single detector with a timeout guard."""
+
+async def _run_detector(detector: BaseDetector, timeout_seconds: int) -> list[Alert] | None:
+    """Run a single detector with a timeout guard.
+
+    Returns None on failure (timeout or exception), list[Alert] on success.
+    """
     try:
         return await asyncio.wait_for(detector.detect(), timeout=timeout_seconds)
     except TimeoutError:
         log.warning("Detector '%s' timed out after %ds", detector.pattern_id, timeout_seconds)
-        return []
+        return None
     except Exception as exc:
         log.error("Detector '%s' raised an unexpected error: %s", detector.pattern_id, exc)
-        return []
+        return None
 
 
 def _cold_start_active(state: WatchdogState, grace_minutes: int) -> bool:
@@ -58,7 +63,32 @@ async def run_detection_cycle(
         log.debug("Cold-start grace period active — suppressing non-bypass alerts")
 
     for detector in detectors:
-        alerts = await _run_detector(detector, settings.detection_timeout_seconds)
+        result = await _run_detector(detector, settings.detection_timeout_seconds)
+
+        # FR35 — Source degradation tracking
+        pid = detector.pattern_id
+        if result is None:
+            state.detector_failure_counts[pid] = state.detector_failure_counts.get(pid, 0) + 1
+            fail_count = state.detector_failure_counts[pid]
+            if fail_count >= _DEGRADATION_THRESHOLD and pid not in state.detector_degradation_warned:
+                state.detector_degradation_warned.add(pid)
+                log.warning(
+                    "Source degradation: detector '%s' failed %d times consecutively",
+                    pid, fail_count,
+                )
+                try:
+                    await bot.post_info(
+                        f":warning: **Source degradation** — detector `{pid}` has failed "
+                        f"{fail_count} times consecutively. Alerts may be missed."
+                    )
+                except Exception as exc:
+                    log.error("Failed to post source degradation warning for '%s': %s", pid, exc)
+            alerts: list[Alert] = []
+        else:
+            if state.detector_failure_counts.get(pid, 0) > 0:
+                state.detector_failure_counts[pid] = 0
+                state.detector_degradation_warned.discard(pid)
+            alerts = result
 
         for alert in alerts:
             key = alert.suppression_key
