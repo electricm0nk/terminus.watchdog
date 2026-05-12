@@ -1,4 +1,7 @@
 name: Release
+# Release is triggered by pushing a semver tag (v*.*.*) to main.
+# Normal flow: feature branch → PR → merge to main → push v*.*.* tag.
+# No dev environment exists for this service — production only.
 
 on:
   push:
@@ -16,9 +19,15 @@ jobs:
     permissions:
       contents: read
       packages: write
+    outputs:
+      version: ${{ steps.version.outputs.version }}
 
     steps:
       - uses: actions/checkout@v4
+
+      - name: Extract version from tag
+        id: version
+        run: echo "version=${GITHUB_REF_NAME#v}" >> "$GITHUB_OUTPUT"
 
       - name: Log in to GHCR
         uses: docker/login-action@v3
@@ -43,3 +52,55 @@ jobs:
           push: true
           tags: ${{ steps.meta.outputs.tags }}
           labels: ${{ steps.meta.outputs.labels }}
+
+  promote-manifest:
+    name: Promote manifest in terminus.infra
+    needs: build-and-push
+    # Requires the self-hosted runner for INFRA_DEPLOY_KEY access.
+    # Cloud runner fallback is not permitted — runner unavailability is a release failure.
+    runs-on: [self-hosted, trantor-internal]
+    env:
+      VERSION: ${{ needs.build-and-push.outputs.version }}
+    steps:
+      - name: Validate inputs
+        run: |
+          [[ -n "${VERSION}" ]]          || { echo "::error::version is empty"; exit 1; }
+          [[ -n "${INFRA_DEPLOY_KEY:-}" ]] || { echo "::error::INFRA_DEPLOY_KEY is empty on runner"; exit 1; }
+
+      - name: Promote values.yaml in terminus.infra
+        run: |
+          git clone \
+            https://x-access-token:${INFRA_DEPLOY_KEY}@github.com/electricm0nk/terminus.infra.git
+          cd terminus.infra
+          git config user.email "ci@trantor.internal"
+          git config user.name "Terminus CI"
+
+          VALUES_PATH="platforms/k3s/helm/terminus-watchdog/values.yaml"
+          MAX_RETRIES=3
+          PROMOTED=false
+
+          for i in $(seq 1 ${MAX_RETRIES}); do
+            git fetch origin
+            git checkout main
+            git reset --hard origin/main
+
+            sed -i "s/^  tag:.*/  tag: ${VERSION}/" "${VALUES_PATH}"
+
+            git add "${VALUES_PATH}"
+            if git diff --cached --quiet; then
+              echo "No change needed — already at ${VERSION}"
+              PROMOTED=true
+              break
+            fi
+            git commit -m "chore(release): promote terminus-watchdog:${VERSION} to prod"
+
+            if git push origin main; then
+              PROMOTED=true
+              break
+            fi
+            echo "Push conflict — retrying (attempt ${i}/${MAX_RETRIES})"
+            git reset --hard HEAD~1
+            sleep 2
+          done
+
+          [[ "${PROMOTED}" == "true" ]] || { echo "::error::Manifest promotion failed after ${MAX_RETRIES} attempts"; exit 1; }
