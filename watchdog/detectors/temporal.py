@@ -62,10 +62,14 @@ class TemporalZombieDetector(BaseDetector):
                 pattern = "temporal-zombie-critical"
                 severity = "high"
                 threshold_desc = f"{self._zombie_critical_hours}h"
+                # >24h zombie: auto-terminate is safe — clearly stuck
+                remediation_available = True
             elif elapsed_hours > self._zombie_activity_hours:
                 pattern = "temporal-zombie-activity"
                 severity = "medium"
                 threshold_desc = f"{self._zombie_activity_hours}h"
+                # 2-24h zombie: alert only — may still be legitimately running
+                remediation_available = False
             else:
                 continue
 
@@ -86,7 +90,7 @@ class TemporalZombieDetector(BaseDetector):
                         "Inspect the workflow in the Temporal Web UI. "
                         "Terminate if confirmed stuck or no longer needed."
                     ),
-                    remediation_available=False,
+                    remediation_available=remediation_available,
                 )
             )
 

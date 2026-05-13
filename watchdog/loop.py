@@ -14,6 +14,7 @@ from watchdog.models import ActiveAlert, Alert
 from watchdog.state import WatchdogState
 
 if TYPE_CHECKING:
+    from watchdog.actions.engine import RemediationEngine
     from watchdog.config import Settings
     from watchdog.discord.bot import WatchdogBot
 
@@ -48,6 +49,7 @@ async def run_detection_cycle(
     detectors: list[BaseDetector],
     state: WatchdogState,
     settings: Settings,
+    remediation_engine: RemediationEngine | None = None,
 ) -> None:
     """Run one full poll cycle over all registered detectors.
 
@@ -122,6 +124,25 @@ async def run_detection_cycle(
             state.add_active_alert(active, message_id)
             state.start_cooldown(key, minutes=float(settings.cooldown_minutes))
 
+            if alert.remediation_available and remediation_engine is not None:
+                try:
+                    success = await remediation_engine.remediate(alert)
+                    if success:
+                        info_msg = (
+                            f":white_check_mark: **Auto-remediated** `{alert.pattern}` "
+                            f"on `{alert.resource_name}` — action taken."
+                        )
+                    else:
+                        info_msg = (
+                            f":x: **Auto-remediation failed** for `{alert.pattern}` "
+                            f"on `{alert.resource_name}` — manual action required."
+                        )
+                    await bot.post_info(info_msg)
+                except Exception as exc:
+                    log.error(
+                        "Remediation engine error for alert '%s': %s", key, exc
+                    )
+
     if grace_active and not _cold_start_active(state, settings.cold_start_grace_minutes):
         log.info("Cold-start grace period expired — normal alert delivery resumed")
 
@@ -131,6 +152,7 @@ async def detection_loop(
     detectors: list[BaseDetector],
     state: WatchdogState,
     settings: Settings,
+    remediation_engine: RemediationEngine | None = None,
 ) -> None:
     """Infinite detection loop.
 
@@ -143,5 +165,11 @@ async def detection_loop(
         settings.cold_start_grace_minutes,
     )
     while True:
-        await run_detection_cycle(bot=bot, detectors=detectors, state=state, settings=settings)
+        await run_detection_cycle(
+            bot=bot,
+            detectors=detectors,
+            state=state,
+            settings=settings,
+            remediation_engine=remediation_engine,
+        )
         await asyncio.sleep(settings.poll_interval_seconds)

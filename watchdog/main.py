@@ -8,6 +8,7 @@ import os
 
 from pythonjsonlogger import jsonlogger
 
+from watchdog.actions import RemediationEngine
 from watchdog.clients.argocd import ArgoCDClient
 from watchdog.clients.k8s import KubernetesClient
 from watchdog.clients.loki import LokiClient
@@ -131,12 +132,24 @@ async def main() -> None:
         ops_user_ids=settings.discord_ops_user_ids,
     )
 
+    # Remediation engine
+    remediation_engine = RemediationEngine(
+        temporal_client=temporal_client,
+        argocd_client=argocd_client,
+    )
+
     async def _run_bot_then_loop() -> None:
         """Start the Discord bot and wait for it to be ready before launching the detection loop."""
         bot_task = asyncio.create_task(bot.start(settings.discord_bot_token))
         await asyncio.wait_for(bot.ready_event.wait(), timeout=60)
         loop_task = asyncio.create_task(
-            detection_loop(bot=bot, detectors=detectors, state=state, settings=settings)
+            detection_loop(
+                bot=bot,
+                detectors=detectors,
+                state=state,
+                settings=settings,
+                remediation_engine=remediation_engine,
+            )
         )
         await asyncio.gather(bot_task, loop_task)
 

@@ -62,6 +62,30 @@ class ArgoCDClient:
         result: dict[str, Any] = resp.json()
         return result
 
+    async def sync_application(self, name: str) -> None:
+        """Trigger a sync for an ArgoCD application."""
+        try:
+            resp = await self._client.post(f"/api/v1/applications/{name}/sync", json={})
+        except httpx.TimeoutException as exc:
+            raise ArgoCDTimeoutError(str(exc)) from exc
+        if resp.status_code in (401, 403):
+            raise ArgoCDAuthError(f"HTTP {resp.status_code} from ArgoCD")
+        resp.raise_for_status()
+
+    async def terminate_stuck_sync(self, name: str) -> None:
+        """Terminate a stuck sync operation for an ArgoCD application.
+
+        A 404 response means there is no active operation — treated as success.
+        """
+        try:
+            resp = await self._client.delete(f"/api/v1/applications/{name}/operation")
+        except httpx.TimeoutException as exc:
+            raise ArgoCDTimeoutError(str(exc)) from exc
+        if resp.status_code in (401, 403):
+            raise ArgoCDAuthError(f"HTTP {resp.status_code} from ArgoCD")
+        if resp.status_code != 404:
+            resp.raise_for_status()
+
     async def aclose(self) -> None:
         """Close the underlying HTTP client."""
         await self._client.aclose()

@@ -74,6 +74,19 @@ class TemporalClient:
             raise TemporalTimeoutError("Timed out listing Temporal workflows") from exc
         return results
 
+    async def terminate_workflow(self, workflow_id: str, reason: str = "watchdog-auto-terminate") -> None:
+        """Terminate a running Temporal workflow by workflow_id.
+
+        Uses the latest run for the given workflow_id (no run_id required).
+
+        Raises:
+            TemporalConnectError: if connect() was not called or failed.
+        """
+        if self._client is None:
+            raise TemporalConnectError("Temporal client is not connected — call connect() first")
+        handle = self._client.get_workflow_handle(workflow_id)
+        await handle.terminate(reason)
+
     async def aclose(self) -> None:
         """Release client resources (no-op for temporalio)."""
         self._client = None
