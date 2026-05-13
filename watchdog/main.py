@@ -18,7 +18,7 @@ from watchdog.detectors.argocd import ArgoCDPoller, ArgoCDStuckSyncDetector
 from watchdog.detectors.argocd_order_day import ArgoCDOrderDayDetector
 from watchdog.detectors.k8s import DeploymentUnavailableDetector, K8sCrashLoopDetector, NodeNotReadyDetector
 from watchdog.detectors.loki import TemporalPostgresConnectivityDetector
-from watchdog.detectors.temporal import TemporalStaleDetector, TemporalZombieDetector
+from watchdog.detectors.temporal import TemporalStaleDetector, TemporalZombieDetector, TemporalSeedSecretsDetector
 from watchdog.discord.bot import WatchdogBot
 from watchdog.health import start_health_server
 from watchdog.loop import detection_loop
@@ -100,6 +100,9 @@ async def main() -> None:
         TemporalStaleDetector(
             temporal_client=temporal_client,
             stale_minutes=settings.stale_workflow_minutes,
+        ),
+        TemporalSeedSecretsDetector(
+            temporal_client=temporal_client,
         ),
         # E3 — Loki
         TemporalPostgresConnectivityDetector(

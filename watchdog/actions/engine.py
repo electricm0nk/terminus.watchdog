@@ -15,6 +15,7 @@ log = logging.getLogger(__name__)
 # Patterns that have registered automated remediation handlers.
 _REMEDIABLE_PATTERNS = frozenset({
     "temporal-zombie-critical",
+    "temporal-seed-secrets-loop",
     "argocd-stuck-sync",
     "argocd-live-drift",
 })
@@ -50,6 +51,9 @@ class RemediationEngine:
 
         if pattern == "temporal-zombie-critical":
             return await temporal_actions.terminate_zombie_workflow(self._temporal, alert)
+
+        if pattern == "temporal-seed-secrets-loop":
+            return await temporal_actions.terminate_seed_secrets_loop(self._temporal, alert)
 
         if pattern == "argocd-stuck-sync":
             return await argocd_actions.terminate_stuck_sync(self._argocd, alert)

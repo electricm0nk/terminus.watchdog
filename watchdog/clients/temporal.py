@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import logging
+from typing import Any
 
 from temporalio.client import Client, WorkflowExecution
 from temporalio.service import TLSConfig
@@ -86,6 +87,22 @@ class TemporalClient:
             raise TemporalConnectError("Temporal client is not connected — call connect() first")
         handle = self._client.get_workflow_handle(workflow_id)
         await handle.terminate(reason)
+
+    async def describe_workflow(self, workflow_id: str) -> Any:
+        """Return the workflow execution description, including pending_activities.
+
+        ``pending_activities`` is a sequence of objects each with:
+          - ``activity_type: str``
+          - ``attempt: int``
+          - ``last_failure: BaseException | None``
+
+        Raises:
+            TemporalConnectError: if connect() was not called or failed.
+        """
+        if self._client is None:
+            raise TemporalConnectError("Temporal client is not connected — call connect() first")
+        handle = self._client.get_workflow_handle(workflow_id)
+        return await handle.describe()
 
     async def aclose(self) -> None:
         """Release client resources (no-op for temporalio)."""

@@ -189,3 +189,111 @@ def _format_elapsed(delta: datetime.timedelta) -> str:
     if hours:
         return f"{hours}h {minutes}m"
     return f"{minutes}m"
+
+
+def _extract_service_name(workflow_id: str) -> str:
+    """Extract service name from a ReleaseWorkflow ID.
+
+    Format: ``release-{service-name}-{env}-{short-sha}``
+
+    Examples::
+
+        release-fourdogs-catalog-trigger-prod-ba5b8fa5  → fourdogs-catalog-trigger
+        release-fourdogs-etailpet-sales-trigger-dev-a531b019  → fourdogs-etailpet-sales-trigger
+    """
+    name = workflow_id
+    if name.startswith("release-"):
+        name = name[len("release-"):]
+    for env_marker in ("-prod-", "-dev-"):
+        idx = name.rfind(env_marker)
+        if idx != -1:
+            name = name[:idx]
+            break
+    return name
+
+
+# Attempt count above which SeedSecrets is definitely stuck (not a transient failure).
+# At 100s max backoff interval, attempt 10 takes ~7 min total — fast detection, minimal noise.
+_SEED_SECRETS_ATTEMPT_THRESHOLD = 10
+
+
+class TemporalSeedSecretsDetector(BaseDetector):
+    """Detect ReleaseWorkflow executions stuck in a SeedSecrets activity failure loop.
+
+    ``SeedSecrets`` invokes a Semaphore task template named ``seed-{service}-secrets``.
+    If the template does not exist, the activity fails with a retryable error and
+    retries indefinitely (no ``MaxAttempts`` in the retry policy).
+
+    Emits ``temporal-seed-secrets-loop`` (High, remediation_available=True) when:
+    - Workflow type is ``ReleaseWorkflow``
+    - A pending ``SeedSecrets`` activity has ``attempt > attempt_threshold``
+    """
+
+    pattern_id = "temporal-seed-secrets"
+
+    def __init__(
+        self,
+        temporal_client: TemporalClient,
+        attempt_threshold: int = _SEED_SECRETS_ATTEMPT_THRESHOLD,
+    ) -> None:
+        self._client = temporal_client
+        self._attempt_threshold = attempt_threshold
+
+    async def detect(self) -> list[Alert]:
+        now = datetime.datetime.now(datetime.UTC)
+        alerts: list[Alert] = []
+
+        try:
+            workflows = await self._client.list_running_workflows()
+        except Exception:
+            logger.exception("TemporalSeedSecretsDetector: failed to list running workflows")
+            return []
+
+        for wf in workflows:
+            if wf.type != "ReleaseWorkflow":
+                continue
+
+            try:
+                desc = await self._client.describe_workflow(wf.id)
+            except Exception:
+                logger.warning(
+                    "TemporalSeedSecretsDetector: could not describe workflow %s", wf.id
+                )
+                continue
+
+            for activity in desc.pending_activities or []:
+                if activity.activity_type != "SeedSecrets":
+                    continue
+                if activity.attempt <= self._attempt_threshold:
+                    continue
+
+                service_name = _extract_service_name(wf.id)
+                template_name = f"seed-{service_name}-secrets"
+                elapsed = now - wf.start_time
+
+                failure_hint = ""
+                if activity.last_failure is not None:
+                    failure_hint = f" Last error: {str(activity.last_failure)[:200]}"
+
+                alerts.append(
+                    Alert(
+                        pattern="temporal-seed-secrets-loop",
+                        severity="high",
+                        resource_name=wf.id,
+                        resource_namespace=wf.task_queue or "terminus-platform",
+                        duration_seconds=elapsed.total_seconds(),
+                        diagnosis=(
+                            f"ReleaseWorkflow '{wf.id}' is stuck: SeedSecrets has failed "
+                            f"{activity.attempt} times. The Semaphore task template "
+                            f"'{template_name}' appears to be missing.{failure_hint}"
+                        ),
+                        recommended_action=(
+                            f"Create the Semaphore task template '{template_name}', "
+                            "then re-trigger the release pipeline."
+                        ),
+                        remediation_available=True,
+                    )
+                )
+                break  # one alert per workflow
+
+        return alerts
