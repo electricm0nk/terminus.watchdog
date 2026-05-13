@@ -75,6 +75,18 @@ class TemporalClient:
             raise TemporalTimeoutError("Timed out listing Temporal workflows") from exc
         return results
 
+    async def has_active_releases(self, workflow_type: str = "ReleaseWorkflow") -> bool:
+        """Return True if at least one workflow of ``workflow_type`` is currently running.
+
+        Uses a targeted Temporal visibility query so only one record is fetched at most.
+        """
+        if self._client is None:
+            raise TemporalConnectError("Temporal client is not connected — call connect() first")
+        query = f"WorkflowType='{workflow_type}' AND ExecutionStatus='Running'"
+        async for _ in self._client.list_workflows(query=query):
+            return True
+        return False
+
     async def terminate_workflow(self, workflow_id: str, reason: str = "watchdog-auto-terminate") -> None:
         """Terminate a running Temporal workflow by workflow_id.
 

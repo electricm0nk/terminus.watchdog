@@ -25,6 +25,31 @@ class WatchdogState:
         # FR35 — Source degradation tracking
         self.detector_failure_counts: dict[str, int] = {}
         self.detector_degradation_warned: set[str] = set()
+        # Global mute — suppresses ALL non-bypass alerts until this timestamp.
+        # None means no global mute is active.
+        self.global_mute_until: datetime.datetime | None = None
+        # Set to True when a release-auto-mute start message has been posted to Discord.
+        # Reset to False when the mute expires so the next release posts again.
+        self.release_mute_announced: bool = False
+
+    # ------------------------------------------------------------------
+    # Global mute helpers
+    # ------------------------------------------------------------------
+
+    def set_global_mute(self, duration_minutes: float) -> datetime.datetime:
+        """Mute all alerts for ``duration_minutes`` minutes. Returns expiry time."""
+        self.global_mute_until = datetime.datetime.utcnow() + datetime.timedelta(minutes=duration_minutes)
+        return self.global_mute_until
+
+    def clear_global_mute(self) -> None:
+        """Cancel any active global mute."""
+        self.global_mute_until = None
+
+    def is_globally_muted(self) -> bool:
+        """Return True if a global mute is currently active."""
+        if self.global_mute_until is None:
+            return False
+        return self.global_mute_until > datetime.datetime.utcnow()
 
     # ------------------------------------------------------------------
     # Suppression helpers

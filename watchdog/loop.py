@@ -15,6 +15,7 @@ from watchdog.state import WatchdogState
 
 if TYPE_CHECKING:
     from watchdog.actions.engine import RemediationEngine
+    from watchdog.clients.temporal import TemporalClient
     from watchdog.config import Settings
     from watchdog.discord.bot import WatchdogBot
 
@@ -50,6 +51,7 @@ async def run_detection_cycle(
     state: WatchdogState,
     settings: Settings,
     remediation_engine: RemediationEngine | None = None,
+    temporal_client: TemporalClient | None = None,
 ) -> None:
     """Run one full poll cycle over all registered detectors.
 
@@ -57,12 +59,48 @@ async def run_detection_cycle(
     - Skip if suppressed
     - Skip if in cooldown
     - Skip during cold-start grace unless bypass_quiet_hours=True
+    - Skip during global mute unless bypass_quiet_hours=True
     - Post to Discord via bot.post_alert
     - Record in state + start cooldown
+
+    If ``temporal_client`` is provided, a ``ReleaseWorkflow`` presence check is run
+    before the detector sweep.  While a release is running the global mute window is
+    extended automatically; a one-time info message is posted at start and end.
     """
+    # --- Release auto-mute ---
+    if temporal_client is not None:
+        try:
+            release_running = await temporal_client.has_active_releases()
+            if release_running:
+                was_muted = state.is_globally_muted()
+                state.set_global_mute(settings.release_mute_minutes)
+                if not was_muted and not state.release_mute_announced:
+                    state.release_mute_announced = True
+                    log.info("Release in progress — auto-muting alerts for %d min", settings.release_mute_minutes)
+                    try:
+                        await bot.post_info(
+                            f":mute: **Release in progress** — non-critical alerts suppressed for up to "
+                            f"{settings.release_mute_minutes} min during deployment."
+                        )
+                    except Exception as exc:
+                        log.warning("Failed to post release-mute announcement: %s", exc)
+            elif state.release_mute_announced and not state.is_globally_muted():
+                state.release_mute_announced = False
+                log.info("Release complete — resuming normal alert delivery")
+                try:
+                    await bot.post_info(":loud_sound: **Release complete** — alert monitoring resumed.")
+                except Exception as exc:
+                    log.warning("Failed to post release-complete announcement: %s", exc)
+        except Exception as exc:
+            log.warning("Release auto-mute check failed: %s", exc)
+
     grace_active = _cold_start_active(state, settings.cold_start_grace_minutes)
     if grace_active:
         log.debug("Cold-start grace period active — suppressing non-bypass alerts")
+
+    globally_muted = state.is_globally_muted()
+    if globally_muted:
+        log.debug("Global mute active until %s — suppressing non-bypass alerts", state.global_mute_until)
 
     for detector in detectors:
         result = await _run_detector(detector, settings.detection_timeout_seconds)
@@ -105,6 +143,10 @@ async def run_detection_cycle(
 
             if grace_active and not alert.bypass_quiet_hours:
                 log.debug("Alert '%s' suppressed during cold-start grace", key)
+                continue
+
+            if globally_muted and not alert.bypass_quiet_hours:
+                log.debug("Alert '%s' suppressed during global mute", key)
                 continue
 
             try:
@@ -153,6 +195,7 @@ async def detection_loop(
     state: WatchdogState,
     settings: Settings,
     remediation_engine: RemediationEngine | None = None,
+    temporal_client: TemporalClient | None = None,
 ) -> None:
     """Infinite detection loop.
 
@@ -171,5 +214,6 @@ async def detection_loop(
             state=state,
             settings=settings,
             remediation_engine=remediation_engine,
+            temporal_client=temporal_client,
         )
         await asyncio.sleep(settings.poll_interval_seconds)

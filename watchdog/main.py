@@ -152,6 +152,7 @@ async def main() -> None:
                 state=state,
                 settings=settings,
                 remediation_engine=remediation_engine,
+                temporal_client=temporal_client,
             )
         )
         await asyncio.gather(bot_task, loop_task)

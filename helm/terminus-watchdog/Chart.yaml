@@ -3,7 +3,7 @@ name: terminus-watchdog
 description: Terminus Watchdog Agent — autonomous platform monitoring via Discord
 type: application
 version: 0.1.7
-appVersion: "0.1.7"
+appVersion: "0.1.8"
 keywords:
   - watchdog
   - monitoring

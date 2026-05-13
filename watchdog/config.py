@@ -93,6 +93,13 @@ class Settings:
         default_factory=lambda: _get_int("COLD_START_GRACE_MINUTES", 30)
     )
 
+    # Release auto-mute: how long to extend the mute window on each poll cycle
+    # while a ReleaseWorkflow is running.  Should be comfortably longer than
+    # poll_interval_seconds / 60 so there's no gap between polls.
+    release_mute_minutes: int = field(
+        default_factory=lambda: _get_int("RELEASE_MUTE_MINUTES", 15)
+    )
+
     # Loki (optional — empty string disables Loki-based detectors)
     loki_url: str = field(default_factory=lambda: _get("LOKI_URL", ""))
 
