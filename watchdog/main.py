@@ -18,7 +18,7 @@ from watchdog.detectors.argocd import ArgoCDPoller, ArgoCDStuckSyncDetector
 from watchdog.detectors.argocd_order_day import ArgoCDOrderDayDetector
 from watchdog.detectors.k8s import DeploymentUnavailableDetector, K8sCrashLoopDetector, NodeNotReadyDetector
 from watchdog.detectors.loki import TemporalPostgresConnectivityDetector
-from watchdog.detectors.temporal import TemporalStaleDetector, TemporalZombieDetector, TemporalSeedSecretsDetector
+from watchdog.detectors.temporal import TemporalSeedSecretsDetector, TemporalStaleDetector, TemporalZombieDetector
 from watchdog.discord.bot import WatchdogBot
 from watchdog.health import start_health_server
 from watchdog.loop import detection_loop
