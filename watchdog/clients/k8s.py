@@ -27,7 +27,7 @@ class KubernetesClient:
 
     async def connect(self) -> None:
         """Load in-cluster config and initialise API clients."""
-        await config.load_incluster_config()  # type: ignore[no-untyped-call]
+        config.load_incluster_config()  # type: ignore[no-untyped-call]
         self._core = CoreV1Api()
         self._apps = AppsV1Api()
 

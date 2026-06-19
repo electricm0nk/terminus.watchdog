@@ -18,7 +18,7 @@ from watchdog.detectors.argocd import ArgoCDPoller, ArgoCDStuckSyncDetector
 from watchdog.detectors.argocd_order_day import ArgoCDOrderDayDetector
 from watchdog.detectors.k8s import DeploymentUnavailableDetector, K8sCrashLoopDetector, NodeNotReadyDetector
 from watchdog.detectors.loki import TemporalPostgresConnectivityDetector
-from watchdog.detectors.temporal import TemporalStaleDetector, TemporalZombieDetector, TemporalSeedSecretsDetector
+from watchdog.detectors.temporal import TemporalSeedSecretsDetector, TemporalStaleDetector, TemporalZombieDetector
 from watchdog.discord.bot import WatchdogBot
 from watchdog.health import start_health_server
 from watchdog.loop import detection_loop
@@ -78,8 +78,11 @@ async def main() -> None:
     try:
         await k8s_client.connect()
         k8s_connected = True
-    except Exception:
-        logger.warning("KubernetesClient: in-cluster config unavailable — k8s detectors disabled")
+    except Exception as exc:
+        logger.warning(
+            "KubernetesClient connect failed — k8s detectors disabled: %s",
+            exc,
+        )
         k8s_connected = False
 
     # Register all detectors

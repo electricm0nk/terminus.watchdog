@@ -250,7 +250,7 @@ class TemporalSeedSecretsDetector(BaseDetector):
             return []
 
         for wf in workflows:
-            if wf.type != "ReleaseWorkflow":
+            if wf.workflow_type != "ReleaseWorkflow":
                 continue
 
             try:

@@ -71,7 +71,7 @@ class TestKubernetesClientPods:
         with patch("watchdog.clients.k8s.config") as mock_config, \
              patch("watchdog.clients.k8s.CoreV1Api") as mock_core_cls, \
              patch("watchdog.clients.k8s.AppsV1Api"):
-            mock_config.load_incluster_config = AsyncMock()
+            mock_config.load_incluster_config = MagicMock()
             mock_core = AsyncMock()
             mock_core.list_pod_for_all_namespaces = AsyncMock(
                 return_value=MagicMock(items=[mock_pod])
@@ -92,7 +92,7 @@ class TestKubernetesClientPods:
         with patch("watchdog.clients.k8s.config") as mock_config, \
              patch("watchdog.clients.k8s.CoreV1Api") as mock_core_cls, \
              patch("watchdog.clients.k8s.AppsV1Api"):
-            mock_config.load_incluster_config = AsyncMock()
+            mock_config.load_incluster_config = MagicMock()
             mock_core = AsyncMock()
             mock_core.list_pod_for_all_namespaces = AsyncMock(
                 side_effect=ApiException(status=403, reason="Forbidden")
@@ -114,7 +114,7 @@ class TestKubernetesClientDeployments:
         with patch("watchdog.clients.k8s.config") as mock_config, \
              patch("watchdog.clients.k8s.CoreV1Api"), \
              patch("watchdog.clients.k8s.AppsV1Api") as mock_apps_cls:
-            mock_config.load_incluster_config = AsyncMock()
+            mock_config.load_incluster_config = MagicMock()
             mock_apps = AsyncMock()
             mock_apps.list_deployment_for_all_namespaces = AsyncMock(
                 return_value=MagicMock(items=[mock_dep])
@@ -137,7 +137,7 @@ class TestKubernetesClientNodes:
         with patch("watchdog.clients.k8s.config") as mock_config, \
              patch("watchdog.clients.k8s.CoreV1Api") as mock_core_cls, \
              patch("watchdog.clients.k8s.AppsV1Api"):
-            mock_config.load_incluster_config = AsyncMock()
+            mock_config.load_incluster_config = MagicMock()
             mock_core = AsyncMock()
             mock_core.list_pod_for_all_namespaces = AsyncMock(return_value=MagicMock(items=[]))
             mock_core.list_node = AsyncMock(return_value=MagicMock(items=[mock_node]))
@@ -149,3 +149,20 @@ class TestKubernetesClientNodes:
 
         assert len(nodes) == 1
         assert nodes[0].metadata.name == "node-1"
+
+
+class TestKubernetesClientConnect:
+    """Regression tests for in-cluster config loading semantics."""
+
+    async def test_connect_uses_sync_incluster_loader(self) -> None:
+        with patch("watchdog.clients.k8s.config") as mock_config, \
+             patch("watchdog.clients.k8s.CoreV1Api") as mock_core_cls, \
+             patch("watchdog.clients.k8s.AppsV1Api") as mock_apps_cls:
+            mock_config.load_incluster_config = MagicMock()
+
+            client = KubernetesClient()
+            await client.connect()
+
+        mock_config.load_incluster_config.assert_called_once_with()
+        mock_core_cls.assert_called_once_with()
+        mock_apps_cls.assert_called_once_with()
