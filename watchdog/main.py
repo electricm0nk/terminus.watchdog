@@ -78,8 +78,11 @@ async def main() -> None:
     try:
         await k8s_client.connect()
         k8s_connected = True
-    except Exception:
-        logger.warning("KubernetesClient: in-cluster config unavailable — k8s detectors disabled")
+    except Exception as exc:
+        logger.warning(
+            "KubernetesClient connect failed — k8s detectors disabled: %s",
+            exc,
+        )
         k8s_connected = False
 
     # Register all detectors
