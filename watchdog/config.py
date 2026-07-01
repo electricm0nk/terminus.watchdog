@@ -30,6 +30,13 @@ def _require(name: str) -> str:
     return value
 
 
+def _require_trimmed(name: str) -> str:
+    value = _require(name).strip()
+    if not value:
+        raise RuntimeError(f"Required environment variable '{name}' is blank after trimming")
+    return value
+
+
 def _get(name: str, default: str) -> str:
     return os.environ.get(name, default)
 
@@ -46,7 +53,7 @@ class Settings:
     """All configuration consumed from environment variables."""
 
     # Discord
-    discord_bot_token: str = field(default_factory=lambda: _require("DISCORD_BOT_TOKEN"))
+    discord_bot_token: str = field(default_factory=lambda: _require_trimmed("DISCORD_BOT_TOKEN"))
     discord_alerts_channel_id: int = field(
         default_factory=lambda: int(_require("DISCORD_ALERTS_CHANNEL_ID"))
     )
