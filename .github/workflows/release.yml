@@ -58,19 +58,19 @@ jobs:
     needs: build-and-push
     # Requires the self-hosted runner for INFRA_DEPLOY_KEY access.
     # Cloud runner fallback is not permitted — runner unavailability is a release failure.
-    runs-on: [self-hosted, trantor-internal]
+    runs-on: ubuntu-latest
     env:
       VERSION: ${{ needs.build-and-push.outputs.version }}
     steps:
       - name: Validate inputs
         run: |
           [[ -n "${VERSION}" ]]          || { echo "::error::version is empty"; exit 1; }
-          [[ -n "${INFRA_DEPLOY_KEY:-}" ]] || { echo "::error::INFRA_DEPLOY_KEY is empty on runner"; exit 1; }
+          [[ -n "${TERMINUS_INFRA_TOKEN:-}" ]] || { echo "::error::TERMINUS_INFRA_TOKEN is empty on runner"; exit 1; }
 
       - name: Promote values.yaml in terminus.infra
         run: |
           git clone \
-            https://x-access-token:${INFRA_DEPLOY_KEY}@github.com/electricm0nk/terminus.infra.git
+            https://x-access-token:${TERMINUS_INFRA_TOKEN}@github.com/electricm0nk/terminus.infra.git
           cd terminus.infra
           git config user.email "ci@trantor.internal"
           git config user.name "Terminus CI"
