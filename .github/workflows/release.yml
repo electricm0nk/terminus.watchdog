@@ -1,33 +1,82 @@
+# release.yml — Terminus Watchdog hosted release pipeline
+#
+# Migrated from a tag-driven self-hosted workflow (v*.*.*) to the
+# GitHub-hosted runner contract from docs/runbooks/hosted-service-onboarding.md.
+#
+# Key differences from the trailblazer pattern (central-mcp-server):
+#   - Trigger remains tag-driven (v*.*.*) — watchdog has no dev environment,
+#     so PR-merge dispatch is not used.
+#   - helm values files in terminus.infra are prod-only
+#     (platforms/k3s/helm/terminus-watchdog/values.yaml). No values-dev.yaml.
+#   - Semaphore template names (per the ArgoCD app note):
+#       seed-terminus-watchdog-secrets
+#       verify-terminus-watchdog-deploy
+#
+# Required repository secrets:
+#   INFRA_DEPLOY_KEY    - repo-scoped write token for terminus.infra promotion
+#   TS_OAUTH_CLIENT_ID  - Tailscale OAuth client for tailnet access
+#   TS_OAUTH_SECRET     - Tailscale OAuth secret
+#
+# Image strategy: pushes immutable SHA tag plus the existing semver tags
+# (so docker pull by semver still works). Temporal gets the SHA as ImageTag.
+
 name: Release
-# Release is triggered by pushing a semver tag (v*.*.*) to main.
-# Normal flow: feature branch → PR → merge to main → push v*.*.* tag.
-# No dev environment exists for this service — production only.
 
 on:
   push:
     tags:
       - "v*.*.*"
+  workflow_dispatch:
+    inputs:
+      version:
+        description: Optional manual version override (e.g. 1.2.3); defaults to pushed tag
+        required: false
+        type: string
 
-env:
-  REGISTRY: ghcr.io
-  IMAGE_NAME: electricm0nk/terminus-watchdog
+concurrency:
+  group: release-terminus-watchdog-${{ github.ref_name }}
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+  packages: write
 
 jobs:
-  build-and-push:
-    name: Build and push Docker image
+  resolve:
     runs-on: ubuntu-latest
-    permissions:
-      contents: read
-      packages: write
     outputs:
-      version: ${{ steps.version.outputs.version }}
+      version: ${{ steps.map.outputs.version }}
+      release_sha: ${{ steps.map.outputs.release_sha }}
+      values_file: ${{ steps.map.outputs.values_file }}
+      infra_branch: ${{ steps.map.outputs.infra_branch }}
+    steps:
+      - name: Map tag to release context
+        id: map
+        run: |
+          # Tag-driven service: version is the pushed tag (strip leading 'v').
+          if [[ -n "${{ inputs.version || '' }}" ]]; then
+            VERSION="${{ inputs.version }}"
+          else
+            VERSION="${GITHUB_REF_NAME#v}"
+          fi
+          [[ -n "${VERSION}" ]] || { echo "::error::version is empty"; exit 1; }
+          echo "version=${VERSION}"            >> "$GITHUB_OUTPUT"
+          echo "values_file=values.yaml"       >> "$GITHUB_OUTPUT"
+          echo "infra_branch=main"             >> "$GITHUB_OUTPUT"
+          echo "release_sha=${GITHUB_SHA}"     >> "$GITHUB_OUTPUT"
 
+  build-and-push:
+    needs: resolve
+    runs-on: ubuntu-latest
+    env:
+      VERSION: ${{ needs.resolve.outputs.version }}
+      SHA: ${{ needs.resolve.outputs.release_sha }}
+      REGISTRY: ghcr.io
+      IMAGE_NAME: electricm0nk/terminus-watchdog
     steps:
       - uses: actions/checkout@v4
-
-      - name: Extract version from tag
-        id: version
-        run: echo "version=${GITHUB_REF_NAME#v}" >> "$GITHUB_OUTPUT"
+        with:
+          ref: ${{ env.SHA }}
 
       - name: Log in to GHCR
         uses: docker/login-action@v3
@@ -36,71 +85,175 @@ jobs:
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
-      - name: Extract metadata
-        id: meta
-        uses: docker/metadata-action@v5
-        with:
-          images: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}
-          tags: |
-            type=semver,pattern={{version}}
-            type=semver,pattern={{major}}.{{minor}}
-
-      - name: Build and push
+      - name: Build and push (immutable SHA + semver)
         uses: docker/build-push-action@v5
         with:
           context: .
           push: true
-          tags: ${{ steps.meta.outputs.tags }}
-          labels: ${{ steps.meta.outputs.labels }}
+          # Immutable contract: full source SHA tag MUST be present so Temporal
+          # and downstream consumers reference an unchanging digest.
+          # Semver tags retained for human/docker-pull convenience.
+          tags: |
+            ghcr.io/${{ env.IMAGE_NAME }}:${{ env.SHA }}
+            ghcr.io/${{ env.IMAGE_NAME }}:v${{ env.VERSION }}
+            ghcr.io/${{ env.IMAGE_NAME }}:v${{ env.VERSION }}
 
   promote-manifest:
     name: Promote manifest in terminus.infra
-    needs: build-and-push
-    # Requires the self-hosted runner for INFRA_DEPLOY_KEY access.
-    # Cloud runner fallback is not permitted — runner unavailability is a release failure.
+    needs: [resolve, build-and-push]
     runs-on: ubuntu-latest
     env:
-      VERSION: ${{ needs.build-and-push.outputs.version }}
+      SERVICE: terminus-watchdog
+      VERSION: ${{ needs.resolve.outputs.version }}
+      SHA: ${{ needs.resolve.outputs.release_sha }}
+      INFRA_BRANCH: ${{ needs.resolve.outputs.infra_branch }}
+      VALUES_FILE: ${{ needs.resolve.outputs.values_file }}
+      TERMINUS_INFRA_TOKEN: ${{ secrets.INFRA_DEPLOY_KEY }}
     steps:
-      - name: Validate inputs
+      - name: Validate resolved inputs
         run: |
-          [[ -n "${VERSION}" ]]          || { echo "::error::version is empty"; exit 1; }
+          [[ -n "${VERSION}" ]]              || { echo "::error::version is empty"; exit 1; }
+          [[ -n "${SHA}" ]]                  || { echo "::error::sha is empty"; exit 1; }
+          [[ -n "${INFRA_BRANCH}" ]]         || { echo "::error::infra_branch is empty"; exit 1; }
           [[ -n "${TERMINUS_INFRA_TOKEN:-}" ]] || { echo "::error::TERMINUS_INFRA_TOKEN is empty on runner"; exit 1; }
 
       - name: Promote values.yaml in terminus.infra
         run: |
-          git clone \
-            https://x-access-token:${TERMINUS_INFRA_TOKEN}@github.com/electricm0nk/terminus.infra.git
+          git clone https://x-access-token:${TERM....git
           cd terminus.infra
           git config user.email "ci@trantor.internal"
           git config user.name "Terminus CI"
 
-          VALUES_PATH="platforms/k3s/helm/terminus-watchdog/values.yaml"
+          VALUES_PATH="platforms/k3s/helm/${SERVICE}/${VALUES_FILE}"
           MAX_RETRIES=3
           PROMOTED=false
 
           for i in $(seq 1 ${MAX_RETRIES}); do
             git fetch origin
-            git checkout main
-            git reset --hard origin/main
+            git checkout "${INFRA_BRANCH}"
+            git reset --hard "origin/${INFRA_BRANCH}"
 
             sed -i "s/^  tag:.*/  tag: ${VERSION}/" "${VALUES_PATH}"
 
             git add "${VALUES_PATH}"
             if git diff --cached --quiet; then
-              echo "No change needed — already at ${VERSION}"
               PROMOTED=true
               break
             fi
-            git commit -m "chore(release): promote terminus-watchdog:${VERSION} to prod"
 
-            if git push origin main; then
+            git commit -m "chore(release): promote ${SERVICE}:v${VERSION} (${SHA:0:8}) to prod"
+
+            if git push origin "${INFRA_BRANCH}"; then
               PROMOTED=true
               break
             fi
-            echo "Push conflict — retrying (attempt ${i}/${MAX_RETRIES})"
+
+            echo "Push conflict -- retrying (attempt ${i}/${MAX_RETRIES})"
             git reset --hard HEAD~1
             sleep 2
           done
 
-          [[ "${PROMOTED}" == "true" ]] || { echo "::error::Manifest promotion failed after ${MAX_RETRIES} attempts"; exit 1; }
+          if [[ "${PROMOTED}" != "true" ]]; then
+            echo "::error::Manifest promotion failed after ${MAX_RETRIES} attempts."
+            exit 1
+          fi
+
+  trigger-temporal-release:
+    name: Trigger Temporal release workflow
+    needs:
+      - resolve
+      - build-and-push
+      - promote-manifest
+    runs-on: ubuntu-latest
+    env:
+      SERVICE: terminus-watchdog
+      ENV: prod
+      SHA: ${{ needs.resolve.outputs.release_sha }}
+      TEMPORAL_API_BASE_URL: https://temporal-ui.trantor.internal
+      TEMPORAL_NAMESPACE: default
+      TEMPORAL_TASK_QUEUE: terminus-platform
+      WORKFLOW_ID: release-terminus-watchdog-prod-${{ needs.resolve.outputs.release_sha }}
+    steps:
+      - name: Connect to Trantor tailnet
+        uses: tailscale/github-action@v2
+        with:
+          oauth-client-id: ${{ secrets.TS_OAUTH_CLIENT_ID }}
+          oauth-secret: ${{ secrets.TS_OAUTH_SECRET }}
+          tags: tag:github-actions
+
+      - name: Start Temporal ReleaseWorkflow
+        shell: bash
+        run: |
+          set -euo pipefail
+          [[ -n "${ENV}" ]] || { echo "::error::env is empty"; exit 1; }
+          [[ -n "${SHA}" ]] || { echo "::error::sha is empty"; exit 1; }
+
+          python3 - <<'PY' > "${RUNNER_TEMP}/temporal-start.json"
+          import base64
+          import json
+          import os
+
+          workflow_input = {
+              "ServiceName": os.environ["SERVICE"],
+              "Environment": os.environ["ENV"],
+              "BootstrapDB": False,
+              "ImageTag": os.environ["SHA"],
+          }
+          payload = json.dumps(workflow_input, separators=(",", ":")).encode()
+          request = {
+              "workflowType": {"name": "ReleaseWorkflow"},
+              "taskQueue": {"name": os.environ["TEMPORAL_TASK_QUEUE"]},
+              "input": {
+                  "payloads": [{
+                      "metadata": {
+                          "encoding": base64.b64encode(b"json/plain").decode(),
+                      },
+                      "data": base64.b64encode(payload).decode(),
+                  }]
+              },
+              "workflowIdReusePolicy": "WORKFLOW_ID_REUSE_POLICY_ALLOW_DUPLICATE_FAILED_ONLY",
+          }
+          print(json.dumps(request))
+          PY
+
+          curl --insecure --fail-with-body --silent --show-error \
+            "${TEMPORAL_API_BASE_URL}/" \
+            --cookie-jar "${RUNNER_TEMP}/temporal-cookies" \
+            --output /dev/null
+          csrf_token=$(awk '$6 == "_csrf" { print $7 }' "${RUNNER_TEMP}/temporal-cookies")
+          [[ -n "${csrf_token}" ]] || { echo "::error::Temporal API did not issue a CSRF cookie"; exit 1; }
+
+          curl --insecure --fail-with-body --silent --show-error \
+            -H 'Content-Type: application/json' \
+            -H "X-CSRF-Token: ${csrf_token}" \
+            --cookie "${RUNNER_TEMP}/temporal-cookies" \
+            --data-binary "@${RUNNER_TEMP}/temporal-start.json" \
+            "${TEMPORAL_API_BASE_URL}/api/v1/namespaces/${TEMPORAL_NAMESPACE}/workflows/${WORKFLOW_ID}" \
+            > "${RUNNER_TEMP}/temporal-start-response.json"
+
+          jq -e '.runId // .workflowExecution.workflowId // .workflowId' \
+            "${RUNNER_TEMP}/temporal-start-response.json" >/dev/null
+          echo "Started ${WORKFLOW_ID}"
+
+      - name: Wait for Temporal ReleaseWorkflow
+        shell: bash
+        run: |
+          set -euo pipefail
+          deadline=$((SECONDS + 1800))
+          while (( SECONDS < deadline )); do
+            response=$(curl --insecure --fail-with-body --silent --show-error \
+              "${TEMPORAL_API_BASE_URL}/api/v1/namespaces/${TEMPORAL_NAMESPACE}/workflows/${WORKFLOW_ID}")
+            status=$(jq -r '.workflowExecutionInfo.status // .status // empty' <<<"${response}")
+            normalized=$(tr '[:upper:]' '[:lower:]' <<<"${status}")
+            echo "Temporal workflow status: ${status:-unknown}"
+            case "${normalized}" in
+              *completed) exit 0 ;;
+              *failed|*canceled|*terminated|*timed_out)
+                echo "::error::Temporal ReleaseWorkflow ended with status ${status}"
+                exit 1
+                ;;
+            esac
+            sleep 15
+          done
+          echo "::error::Timed out waiting for Temporal ReleaseWorkflow ${WORKFLOW_ID}"
+          exit 1
