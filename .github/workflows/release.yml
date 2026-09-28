@@ -134,7 +134,10 @@ jobs:
             git checkout "${INFRA_BRANCH}"
             git reset --hard "origin/${INFRA_BRANCH}"
 
-            sed -i "s/^  tag:.*/  tag: ${VERSION}/" "${VALUES_PATH}"
+            # Promote the immutable SHA tag, the one Temporal gets as ImageTag.
+            # The semver tags are pushed as v${VERSION}; the bare ${VERSION}
+            # was never pushed, so promoting it left the rollout unpullable.
+            sed -i "s/^  tag:.*/  tag: ${SHA}/" "${VALUES_PATH}"
 
             git add "${VALUES_PATH}"
             if git diff --cached --quiet; then
